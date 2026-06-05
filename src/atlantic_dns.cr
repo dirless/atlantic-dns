@@ -21,6 +21,19 @@ module AtlanticDNS
     subcommand = args.shift
 
     case subcommand
+    when "instances"
+      name = nil
+      opts = OptionParser.new do |p|
+        p.banner = "Usage: atlantic-dns instances [--name NAME]"
+        p.on("--name NAME", "Filter by instance name (vm_description)") { |v| name = v }
+        p.on("--keepass-db PATH", "KeepassXC database path") { |v| keepass_db = v }
+        p.on("--json", "JSON output") { json = true }
+        p.on("--debug", "Log signed URL (creds masked)") { debug = true }
+        p.on("-h", "--help", "Show help") { puts p; exit 0 }
+      end
+      opts.parse(args)
+      client = make_client(debug: debug, keepass_db: keepass_db)
+      Commands.instances(client, name: name, json: json)
     when "zones", "zone-list"
       opts = OptionParser.new do |p|
         p.banner = "Usage: atlantic-dns zones"
@@ -209,6 +222,7 @@ module AtlanticDNS
       atlantic-dns <command> [options]
 
     Commands:
+      instances          List compute instances (--name to filter)
       zones              List all DNS zones
       zone-add           Create a new DNS zone
       zone-delete        Delete a DNS zone

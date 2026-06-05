@@ -145,6 +145,25 @@ module AtlanticDNS
       json
     end
 
+    # ─── Instances ──────────────────────────────────────────────────────
+
+    def list_instances : Array(Instance)
+      resp = api_call("list-instances")
+      wrapper = unwrap(resp, "list-instancesresponse")
+      set = wrapper["instancesSet"]?
+      return [] of Instance if set.nil?
+      extract_indexed_map(set).map { |_key, item|
+        Instance.new(
+          id:       item["InstanceId"].as_s,
+          name:     item["vm_description"].as_s,
+          ip:       item["vm_ip_address"].as_s,
+          status:   item["vm_status"].as_s,
+          location: item["vm_location"].as_s,
+          plan:     item["vm_plan_name"].as_s
+        )
+      }
+    end
+
     # ─── Zones ──────────────────────────────────────────────────────────
 
     # List all DNS zones on the account.

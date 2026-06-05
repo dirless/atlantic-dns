@@ -8,6 +8,24 @@ module AtlanticDNS
     # Single source of truth: read the version from shard.yml at compile time.
     VERSION = {{ read_file("#{__DIR__}/../shard.yml").lines.find(&.starts_with?("version:")).split(":")[1].strip }}
 
+    # ─── instances ──────────────────────────────────────────────────────
+
+    def self.instances(client : Client, name : String?, json : Bool) : Nil
+      list = client.list_instances
+      list = list.select { |i| i.name == name } if name
+      if list.empty?
+        puts(name ? "No instance named '#{name}' found" : "No instances found") unless json
+        return
+      end
+      if json
+        puts JSON.build { |j|
+          j.array { list.each { |i| instance_to_json(j, i) } }
+        }
+      else
+        list.each { |i| puts "#{i.name}  #{i.ip}  #{i.status}  #{i.plan}  #{i.location}  (#{i.id})" }
+      end
+    end
+
     # ─── zones ──────────────────────────────────────────────────────────
 
     def self.zones(client : Client, json : Bool) : Nil
@@ -155,6 +173,17 @@ module AtlanticDNS
       return "@" if host == "@" || host == zone_name
       suffix = ".#{zone_name}"
       host.ends_with?(suffix) ? host[0, host.size - suffix.size] : host
+    end
+
+    private def self.instance_to_json(j : JSON::Builder, i : Instance) : Nil
+      j.object do
+        j.field("id", i.id)
+        j.field("name", i.name)
+        j.field("ip", i.ip)
+        j.field("status", i.status)
+        j.field("location", i.location)
+        j.field("plan", i.plan)
+      end
     end
 
     private def self.zone_to_json(j : JSON::Builder, z : Zone) : Nil

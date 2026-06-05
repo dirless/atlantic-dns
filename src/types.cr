@@ -22,6 +22,20 @@ module AtlanticDNS
     end
   end
 
+  # A compute instance on Atlantic.net.
+  struct Instance
+    getter id : String
+    getter name : String
+    getter ip : String
+    getter status : String
+    getter location : String
+    getter plan : String
+
+    def initialize(@id : String, @name : String, @ip : String,
+                   @status : String, @location : String, @plan : String)
+    end
+  end
+
   # Structured error returned by the Atlantic.net API.
   class APIError < Exception
     getter code : String

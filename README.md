@@ -27,6 +27,10 @@ Or pass a KeepassXC database (entry name: `atlanticnet`, Username = access key, 
 ## Usage
 
 ```sh
+# Instances
+atlantic-dns instances                        # list all
+atlantic-dns instances --name staging         # filter by name → shows IP
+
 # Zones
 atlantic-dns zones
 atlantic-dns zone-add staging.example.com
