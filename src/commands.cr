@@ -110,6 +110,20 @@ module AtlanticDNS
       output_message("Deleted #{count} record(s) matching type=#{type} host=#{host}", json)
     end
 
+    # ─── set-for-instance ────────────────────────────────────────────────
+
+    def self.set_for_instance(client : Client, zone_name : String,
+                               instance_name : String, ttl : String, json : Bool) : Nil
+      instance = client.list_instances.find { |i| i.name.downcase == instance_name.downcase }
+      unless instance
+        STDERR.puts "Error: no instance named '#{instance_name}' found"
+        exit 1
+      end
+      host = "#{instance.name}.#{zone_name}"
+      set(client, zone_name: zone_name, type: "A", host: host,
+          data: instance.ip, ttl: ttl, priority: nil, json: json)
+    end
+
     # ─── set (upsert) ────────────────────────────────────────────────────
 
     def self.set(client : Client, zone_name : String, type : String,

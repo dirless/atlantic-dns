@@ -41,6 +41,7 @@ atlantic-dns list   --zone staging.example.com
 atlantic-dns add    --zone staging.example.com --type A    --host app.staging.example.com --data 1.2.3.4
 atlantic-dns add    --zone staging.example.com --type MX   --host staging.example.com     --data mail.example.com --priority 10
 atlantic-dns set    --zone staging.example.com --type A    --host app.staging.example.com --data 5.6.7.8   # upsert
+atlantic-dns set    --zone example.com --set-a-record-for-instance-name staging  # upsert staging.example.com → instance IP
 atlantic-dns delete --zone staging.example.com --type A    --host app.staging.example.com
 atlantic-dns delete --zone staging.example.com --id 416215
 ```
