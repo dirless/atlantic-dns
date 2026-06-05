@@ -1,0 +1,14 @@
+# Build outputs
+atlantic-dns
+atlantic_dns
+dist/
+
+# Crystal
+lib/
+.shards/
+bin/
+*.dwarf
+
+# Editor
+.DS_Store
+*.swp
