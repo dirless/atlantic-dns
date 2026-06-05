@@ -5,7 +5,8 @@ CLI for managing DNS records on [Atlantic.net](https://www.atlantic.net/).
 ## Install
 
 ```sh
-just build          # → ./atlantic-dns
+just install        # release build, strip, sudo install → /usr/local/bin/atlantic-dns
+just build          # → ./atlantic-dns  (debug build, no sudo)
 just docker-build   # → dist/atlantic-dns  (AL2023-compatible)
 ```
 
