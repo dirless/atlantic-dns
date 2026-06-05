@@ -46,18 +46,18 @@ describe AtlanticDNS::Client do
   # ─── Zone listing (index-keyed map shape) ───────────────────────────
 
   describe "#list_zones" do
-    it "parses index-keyed map response" do
+    it "parses DNSSet array response" do
       client = AtlanticDNS::Client.new(
         access_key: "k", private_key: "s",
         base_url: "https://example.com/"
       )
 
       stub_api({
-        "DNS-list-zonesresponse" => {
-          "zones" => {
-            "0" => {"zone_id" => "101", "zone_name" => "example.com"},
-            "1" => {"zone_id" => "202", "zone_name" => "staging.example.com"},
-          },
+        "dns-list-zonesresponse" => {
+          "DNSSet" => [
+            {"zone_id" => "101", "domain_name" => "example.com"},
+            {"zone_id" => "202", "domain_name" => "staging.example.com"},
+          ],
         },
       }.to_json)
 
@@ -69,23 +69,17 @@ describe AtlanticDNS::Client do
       zones[1].name.should eq("staging.example.com")
     end
 
-    it "parses array response as well" do
+    it "returns empty array when DNSSet is absent" do
       client = AtlanticDNS::Client.new(
         access_key: "k", private_key: "s",
         base_url: "https://example.com/"
       )
 
       stub_api({
-        "DNS-list-zonesresponse" => {
-          "zones" => [
-            {"zone_id" => "101", "zone_name" => "example.com"},
-          ],
-        },
+        "dns-list-zonesresponse" => {"requestid" => "abc"},
       }.to_json)
 
-      zones = client.list_zones
-      zones.size.should eq(1)
-      zones[0].id.should eq("101")
+      client.list_zones.should be_empty
     end
   end
 
@@ -99,17 +93,17 @@ describe AtlanticDNS::Client do
       )
 
       stub_api({
-        "DNS-list-zone-recordsresponse" => {
-          "records" => {
-            "0" => {
-              "record_id" => "501", "type" => "A", "host" => "@",
-              "data" => "1.2.3.4", "ttl" => "3600", "priority" => "",
+        "dns-list-zone-recordsresponse" => {
+          "DNSSet" => [
+            {
+              "record_id" => "501", "type" => "A", "name" => "@",
+              "content" => "1.2.3.4", "ttl" => "3600", "prio" => "0",
             },
-            "1" => {
-              "record_id" => "502", "type" => "CNAME", "host" => "www",
-              "data" => "example.com", "ttl" => "7200", "priority" => "",
+            {
+              "record_id" => "502", "type" => "CNAME", "name" => "www",
+              "content" => "example.com", "ttl" => "7200", "prio" => "0",
             },
-          },
+          ],
         },
       }.to_json)
 
@@ -128,6 +122,20 @@ describe AtlanticDNS::Client do
   # ─── API error handling ─────────────────────────────────────────────
 
   describe "API errors" do
+    it "raises with raw body on non-JSON response (e.g. CloudFlare 522)" do
+      client = AtlanticDNS::Client.new(
+        access_key: "k", private_key: "s",
+        base_url: "https://example.com/"
+      )
+
+      WebMock.stub(:get, BASE_URL_RX)
+        .to_return(body: "error code: 522", headers: {"Content-Type" => "text/html"})
+
+      expect_raises(Exception, /non-JSON response/) do
+        client.list_zones
+      end
+    end
+
     it "raises APIError on error response" do
       client = AtlanticDNS::Client.new(
         access_key: "k", private_key: "s",
@@ -147,17 +155,28 @@ describe AtlanticDNS::Client do
   # ─── Record CRUD ─────────────────────────────────────────────────────
 
   describe "#create_record" do
-    it "parses create response with record_id" do
+    it "returns the record after re-fetching by type+host+data" do
       client = AtlanticDNS::Client.new(
         access_key: "k", private_key: "s",
         base_url: "https://example.com/"
       )
 
-      stub_api({
-        "DNS-create-zone-recordresponse" => {
-          "record_id" => "601",
-        },
-      }.to_json)
+      WebMock.stub(:get, /Action=DNS-create-zone-record/)
+        .to_return(body: {
+          "dns-create-zone-recordresponse" => {
+            "DNSSet" => {"status" => "success", "message" => "A record was saved successfully"},
+          },
+        }.to_json)
+
+      WebMock.stub(:get, /Action=DNS-list-zone-records/)
+        .to_return(body: {
+          "dns-list-zone-recordsresponse" => {
+            "DNSSet" => [
+              {"record_id" => "601", "type" => "A", "name" => "portal",
+               "content" => "1.2.3.4", "ttl" => "3600", "prio" => "0"},
+            ],
+          },
+        }.to_json)
 
       record = client.create_record("101", "A", "portal", "1.2.3.4", "3600")
       record.id.should eq("601")
@@ -183,6 +202,36 @@ describe AtlanticDNS::Client do
 
   # ─── resolve_zone_id ────────────────────────────────────────────────
 
+  describe "#create_zone" do
+    it "parses create-zone response" do
+      client = AtlanticDNS::Client.new(
+        access_key: "k", private_key: "s",
+        base_url: "https://example.com/"
+      )
+
+      stub_api({
+        "dns-create-zoneresponse" => {"zone_id" => "303"},
+      }.to_json)
+
+      zone = client.create_zone("newzone.example.com")
+      zone.id.should eq("303")
+      zone.name.should eq("newzone.example.com")
+    end
+  end
+
+  describe "#delete_zone" do
+    it "succeeds on 200 response" do
+      client = AtlanticDNS::Client.new(
+        access_key: "k", private_key: "s",
+        base_url: "https://example.com/"
+      )
+
+      stub_api(%({"DNS-delete-zoneresponse": {}}))
+
+      client.delete_zone("303")
+    end
+  end
+
   describe "#resolve_zone_id" do
     it "returns the zone ID for a matching name" do
       client = AtlanticDNS::Client.new(
@@ -191,11 +240,11 @@ describe AtlanticDNS::Client do
       )
 
       stub_api({
-        "DNS-list-zonesresponse" => {
-          "zones" => {
-            "0" => {"zone_id" => "101", "zone_name" => "example.com"},
-            "1" => {"zone_id" => "202", "zone_name" => "staging.example.com"},
-          },
+        "dns-list-zonesresponse" => {
+          "DNSSet" => [
+            {"zone_id" => "101", "domain_name" => "example.com"},
+            {"zone_id" => "202", "domain_name" => "staging.example.com"},
+          ],
         },
       }.to_json)
 
@@ -209,10 +258,10 @@ describe AtlanticDNS::Client do
       )
 
       stub_api({
-        "DNS-list-zonesresponse" => {
-          "zones" => {
-            "0" => {"zone_id" => "101", "zone_name" => "example.com"},
-          },
+        "dns-list-zonesresponse" => {
+          "DNSSet" => [
+            {"zone_id" => "101", "domain_name" => "example.com"},
+          ],
         },
       }.to_json)
 

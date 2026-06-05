@@ -26,6 +26,21 @@ module AtlanticDNS
       end
     end
 
+    # ─── zone-add ────────────────────────────────────────────────────────
+
+    def self.zone_add(client : Client, zone_name : String, json : Bool) : Nil
+      zone = client.create_zone(zone_name)
+      output_record("Created zone", zone, json)
+    end
+
+    # ─── zone-delete ────────────────────────────────────────────────────
+
+    def self.zone_delete(client : Client, zone_name : String) : Nil
+      zone_id = client.resolve_zone_id(zone_name)
+      client.delete_zone(zone_id)
+      puts "Deleted zone '#{zone_name}'"
+    end
+
     # ─── list ────────────────────────────────────────────────────────────
 
     def self.list(client : Client, zone_name : String, json : Bool) : Nil
@@ -49,7 +64,7 @@ module AtlanticDNS
                  host : String, data : String, ttl : String,
                  priority : String?, json : Bool) : Nil
       zone_id = client.resolve_zone_id(zone_name)
-      record = client.create_record(zone_id, type, host, data, ttl, priority)
+      record = client.create_record(zone_id, type, api_name(host, zone_name), data, ttl, priority)
       output_record("Created", record, json)
     end
 
@@ -92,9 +107,9 @@ module AtlanticDNS
           output_record("Unchanged", existing, json)
           return
         end
-        client.update_record(zone_id, existing.id, type, host, data, ttl, priority)
+        client.update_record(zone_id, existing.id, type, api_name(host, zone_name), data, ttl, priority)
       else
-        client.create_record(zone_id, type, host, data, ttl, priority)
+        client.create_record(zone_id, type, api_name(host, zone_name), data, ttl, priority)
       end
 
       output_record("Set", record, json)
@@ -117,12 +132,29 @@ module AtlanticDNS
       end
     end
 
+    private def self.output_record(prefix : String, z : Zone, json : Bool) : Nil
+      if json
+        puts JSON.build { |j| zone_to_json(j, z) }
+      else
+        puts "#{prefix}: #{z.name}  (#{z.id})"
+      end
+    end
+
     private def self.output_message(msg : String, json : Bool) : Nil
       if json
         puts JSON.build { |j| j.string(msg) }
       else
         puts msg
       end
+    end
+
+    # Strip the zone suffix so the API doesn't double-append it.
+    # "test.staging.dirless.com" + zone "staging.dirless.com" → "test"
+    # "@" or the bare zone name → "@"
+    private def self.api_name(host : String, zone_name : String) : String
+      return "@" if host == "@" || host == zone_name
+      suffix = ".#{zone_name}"
+      host.ends_with?(suffix) ? host[0, host.size - suffix.size] : host
     end
 
     private def self.zone_to_json(j : JSON::Builder, z : Zone) : Nil

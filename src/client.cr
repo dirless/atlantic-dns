@@ -129,7 +129,9 @@ module AtlanticDNS
       begin
         json = JSON.parse(body)
       rescue ex : JSON::ParseException
-        raise "Failed to parse API response as JSON: #{ex.message} (body: #{body})"
+        # The API sometimes returns raw text (e.g. "error code: 522") when
+        # behind CloudFlare and the origin times out. Surface the raw body.
+        raise "API returned non-JSON response (likely a transient error): #{body.strip}"
       end
 
       # Surface API-level errors
@@ -148,18 +150,18 @@ module AtlanticDNS
     # List all DNS zones on the account.
     def list_zones : Array(Zone)
       resp = api_call("DNS-list-zones")
-      wrapper = resp["DNS-list-zonesresponse"]
+      wrapper = unwrap(resp, "DNS-list-zonesresponse")
 
       # Atlantic returns "No Zones were returned" as an error when empty.
       # Handle gracefully — return an empty array.
-      zones_node = wrapper["zones"]?
+      zones_node = wrapper["DNSSet"]?
       return [] of Zone if zones_node.nil?
 
       zones_map = extract_indexed_map(zones_node)
       zones_map.map { |_key, item|
         Zone.new(
           id:   item["zone_id"].as_s,
-          name: item["zone_name"].as_s
+          name: item["domain_name"].as_s
         )
       }
     rescue ex : APIError
@@ -175,21 +177,39 @@ module AtlanticDNS
       raise "Zone '#{zone_name}' not found"
     end
 
+    # Create a new DNS zone. Returns the new zone.
+    def create_zone(zone_name : String) : Zone
+      resp = api_call("DNS-create-zone", {"zone_name" => zone_name})
+      wrapper = unwrap(resp, "DNS-create-zoneresponse")
+      Zone.new(
+        id:   wrapper["zone_id"].as_s,
+        name: zone_name
+      )
+    end
+
+    # Delete a DNS zone and all its records.
+    def delete_zone(zone_id : String) : Nil
+      api_call("DNS-delete-zone", {"zone_id" => zone_id})
+    end
+
     # ─── Records ────────────────────────────────────────────────────────
 
     # List all DNS records in a zone.
     def list_records(zone_id : String) : Array(Record)
       resp = api_call("DNS-list-zone-records", {"zone_id" => zone_id})
-      wrapper = resp["DNS-list-zone-recordsresponse"]
-      records_map = extract_indexed_map(wrapper["records"])
+      wrapper = unwrap(resp, "DNS-list-zone-recordsresponse")
+      records_node = wrapper["DNSSet"]?
+      return [] of Record if records_node.nil?
+      records_map = extract_indexed_map(records_node)
       records_map.map { |_key, item|
+        prio = item["prio"]?.try(&.as_s?)
         Record.new(
           id:       item["record_id"].as_s,
           type:     item["type"].as_s,
-          host:     item["host"].as_s,
-          data:     item["data"].as_s,
+          host:     item["name"].as_s,
+          data:     item["content"].as_s,
           ttl:      item["ttl"].as_s,
-          priority: item["priority"]?.try(&.as_s)
+          priority: (prio.nil? || prio == "0") ? nil : prio
         )
       }
     end
@@ -201,21 +221,19 @@ module AtlanticDNS
       extra = {
         "zone_id" => zone_id,
         "type"    => type,
-        "host"    => host,
-        "data"    => data,
+        "name"    => host,
+        "content" => data,
         "ttl"     => ttl,
       }
-      extra["priority"] = priority if priority
-      resp = api_call("DNS-create-zone-record", extra)
-      wrapper = resp["DNS-create-zone-recordresponse"]
-      Record.new(
-        id:       wrapper["record_id"].as_s,
-        type:     type,
-        host:     host,
-        data:     data,
-        ttl:      ttl,
-        priority: priority
-      )
+      extra["prio"] = priority if priority
+      api_call("DNS-create-zone-record", extra)
+      # API returns a success message, not the record ID — re-fetch to get it.
+      # r.host is the full FQDN; host is the label we sent (e.g. "test").
+      list_records(zone_id).find { |r|
+        r.type.downcase == type.downcase &&
+          (r.host == host || r.host.starts_with?("#{host}.")) &&
+          r.data == data
+      } || raise "Record not found after create (type=#{type} host=#{host})"
     end
 
     # Update an existing DNS record.
@@ -226,11 +244,11 @@ module AtlanticDNS
         "zone_id"   => zone_id,
         "record_id" => record_id,
         "type"      => type,
-        "host"      => host,
-        "data"      => data,
+        "name"      => host,
+        "content"   => data,
         "ttl"       => ttl,
       }
-      extra["priority"] = priority if priority
+      extra["prio"] = priority if priority
       api_call("DNS-update-zone-record", extra)
       # The API doesn't return useful data on update — re-fetch to confirm.
       list_records(zone_id).find { |r| r.id == record_id } ||
@@ -246,6 +264,12 @@ module AtlanticDNS
     end
 
     # ─── Helpers ────────────────────────────────────────────────────────
+
+    # Unwrap a known response wrapper key. Raises with the actual key names
+    # when the expected key is absent — far more useful than a raw KeyError.
+    private def unwrap(resp : JSON::Any, key : String) : JSON::Any
+      resp[key]? || resp[key.downcase]? || raise "Expected '#{key}' in API response; got: #{resp.as_h?.try(&.keys.join(", ")) || resp.raw.class}"
+    end
 
     # Atlantic.net returns collections as a JSON object keyed by index
     # ("0", "1", ...) instead of an array. Handle both shapes: if it's

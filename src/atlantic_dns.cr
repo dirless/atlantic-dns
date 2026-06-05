@@ -21,7 +21,7 @@ module AtlanticDNS
     subcommand = args.shift
 
     case subcommand
-    when "zones"
+    when "zones", "zone-list"
       opts = OptionParser.new do |p|
         p.banner = "Usage: atlantic-dns zones"
         p.on("--keepass-db PATH", "KeepassXC database path (looks up 'atlanticnet' entry)") { |v| keepass_db = v }
@@ -30,8 +30,39 @@ module AtlanticDNS
         p.on("-h", "--help", "Show help") { puts p; exit 0 }
       end
       opts.parse(args)
+      unless args.empty?
+        STDERR.puts "Warning: 'zones' takes no arguments (got: #{args.join(", ")}). Did you mean 'list --zone ...'?"
+      end
       client = make_client(debug: debug, keepass_db: keepass_db)
       Commands.zones(client, json: json)
+    when "zone-add"
+      opts = OptionParser.new do |p|
+        p.banner = "Usage: atlantic-dns zone-add <zone>"
+        p.on("--keepass-db PATH", "KeepassXC database path") { |v| keepass_db = v }
+        p.on("--json", "JSON output") { json = true }
+        p.on("--debug", "Log signed URL (creds masked)") { debug = true }
+        p.on("-h", "--help", "Show help") { puts p; exit 0 }
+      end
+      opts.parse(args)
+      # Remaining non-flag args are the zone name
+      positional = args.reject { |a| a.starts_with?("-") }
+      zone_name = positional.first?
+      require_arg(zone_name, "zone name")
+      client = make_client(debug: debug, keepass_db: keepass_db)
+      Commands.zone_add(client, zone_name: zone_name.not_nil!, json: json)
+    when "zone-delete"
+      opts = OptionParser.new do |p|
+        p.banner = "Usage: atlantic-dns zone-delete <zone>"
+        p.on("--keepass-db PATH", "KeepassXC database path") { |v| keepass_db = v }
+        p.on("--debug", "Log signed URL (creds masked)") { debug = true }
+        p.on("-h", "--help", "Show help") { puts p; exit 0 }
+      end
+      opts.parse(args)
+      positional = args.reject { |a| a.starts_with?("-") }
+      zone_name = positional.first?
+      require_arg(zone_name, "zone name")
+      client = make_client(debug: debug, keepass_db: keepass_db)
+      Commands.zone_delete(client, zone_name: zone_name.not_nil!)
     when "list"
       zone_name = nil
       opts = OptionParser.new do |p|
@@ -179,6 +210,8 @@ module AtlanticDNS
 
     Commands:
       zones              List all DNS zones
+      zone-add           Create a new DNS zone
+      zone-delete        Delete a DNS zone
       list               List records in a zone
       add                Add a DNS record
       delete             Delete a DNS record (by ID or type+host match)
@@ -201,7 +234,7 @@ end
 
 begin
   AtlanticDNS.run(ARGV)
-rescue ex : AtlanticDNS::APIError
+rescue ex : Exception
   STDERR.puts "Error: #{ex.message}"
   exit 1
 end

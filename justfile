@@ -1,7 +1,8 @@
 binary := "atlantic-dns"
 src     := "src/atlantic_dns.cr"
 
-default: build
+default:
+    @just --list
 
 build:
     @echo "==> Building {{binary}}..."
