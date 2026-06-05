@@ -119,7 +119,11 @@ module AtlanticDNS
         STDERR.puts "Error: no instance named '#{instance_name}' found"
         exit 1
       end
-      host = "#{instance.name.downcase}.#{zone_name}"
+      # If the instance name is already the first label of the zone
+      # (e.g. instance "staging" + zone "staging.dirless.com"), point the
+      # apex rather than creating "staging.staging.dirless.com".
+      zone_label = zone_name.split(".").first
+      host = (instance.name.downcase == zone_label) ? zone_name : "#{instance.name.downcase}.#{zone_name}"
       set(client, zone_name: zone_name, type: "A", host: host,
           data: instance.ip, ttl: ttl, priority: nil, json: json)
     end

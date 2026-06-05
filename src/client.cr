@@ -247,11 +247,12 @@ module AtlanticDNS
       extra["prio"] = priority if priority
       api_call("DNS-create-zone-record", extra)
       # API returns a success message, not the record ID — re-fetch to get it.
-      # r.host is the full FQDN; host is the label we sent (e.g. "test").
+      # r.host is the full FQDN; host is the label we sent (e.g. "test" or "@").
+      # For apex records (@) we can't match on host since the API returns the zone FQDN.
       list_records(zone_id).find { |r|
         r.type.downcase == type.downcase &&
-          (r.host == host || r.host.starts_with?("#{host}.")) &&
-          r.data == data
+          r.data == data &&
+          (host == "@" || r.host == host || r.host.starts_with?("#{host}."))
       } || raise "Record not found after create (type=#{type} host=#{host})"
     end
 
