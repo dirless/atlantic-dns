@@ -119,7 +119,7 @@ module AtlanticDNS
         STDERR.puts "Error: no instance named '#{instance_name}' found"
         exit 1
       end
-      host = "#{instance.name}.#{zone_name}"
+      host = "#{instance.name.downcase}.#{zone_name}"
       set(client, zone_name: zone_name, type: "A", host: host,
           data: instance.ip, ttl: ttl, priority: nil, json: json)
     end
