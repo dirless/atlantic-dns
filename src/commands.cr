@@ -135,7 +135,8 @@ module AtlanticDNS
                  priority : String?, json : Bool) : Nil
       zone_id = client.resolve_zone_id(zone_name)
       existing = client.list_records(zone_id).find { |r|
-        r.type.downcase == type.downcase && r.host == host
+        r.type.downcase == type.downcase &&
+          (r.host == host || (host == "@" && (r.host == zone_name || r.host == "#{zone_name}.")))
       }
 
       record = if existing
