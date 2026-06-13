@@ -145,7 +145,7 @@ module AtlanticDNS
       }
 
       # Delete duplicate records beyond the first so set is truly idempotent.
-      matches[1..].each { |r| client.delete_record(zone_id, r.id) }
+      matches.each_with_index { |r, i| client.delete_record(zone_id, r.id) if i > 0 }
 
       record = if first = matches.first?
         if first.data == data && first.ttl == ttl && first.priority == priority
