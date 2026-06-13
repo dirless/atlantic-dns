@@ -113,7 +113,9 @@ module AtlanticDNS
     # ─── set-for-instance ────────────────────────────────────────────────
 
     def self.set_for_instance(client : Client, zone_name : String,
-                               instance_name : String, ttl : String, json : Bool) : Nil
+                               instance_name : String, ttl : String, json : Bool,
+                               wait_propagation : Bool = false,
+                               propagation_timeout : Int32 = Propagation::DEFAULT_TIMEOUT) : Nil
       instance = client.list_instances.find { |i| i.name.downcase == instance_name.downcase }
       unless instance
         STDERR.puts "Error: no instance named '#{instance_name}' found"
@@ -125,31 +127,39 @@ module AtlanticDNS
       zone_label = zone_name.split(".").first
       host = (instance.name.downcase == zone_label) ? zone_name : "#{instance.name.downcase}.#{zone_name}"
       set(client, zone_name: zone_name, type: "A", host: host,
-          data: instance.ip, ttl: ttl, priority: nil, json: json)
+          data: instance.ip, ttl: ttl, priority: nil, json: json,
+          wait_propagation: wait_propagation, propagation_timeout: propagation_timeout)
     end
 
     # ─── set (upsert) ────────────────────────────────────────────────────
 
     def self.set(client : Client, zone_name : String, type : String,
                  host : String, data : String, ttl : String,
-                 priority : String?, json : Bool) : Nil
+                 priority : String?, json : Bool,
+                 wait_propagation : Bool = false,
+                 propagation_timeout : Int32 = Propagation::DEFAULT_TIMEOUT) : Nil
       zone_id = client.resolve_zone_id(zone_name)
-      existing = client.list_records(zone_id).find { |r|
+      matches = client.list_records(zone_id).select { |r|
         r.type.downcase == type.downcase &&
           (r.host == host || (host == "@" && (r.host == zone_name || r.host == "#{zone_name}.")))
       }
 
-      record = if existing
-        if existing.data == data && existing.ttl == ttl && existing.priority == priority
-          output_record("Unchanged", existing, json)
+      # Delete duplicate records beyond the first so set is truly idempotent.
+      matches[1..].each { |r| client.delete_record(zone_id, r.id) }
+
+      record = if first = matches.first?
+        if first.data == data && first.ttl == ttl && first.priority == priority
+          output_record("Unchanged", first, json)
+          propagate_if_needed(type, host, zone_name, data, wait_propagation, propagation_timeout)
           return
         end
-        client.update_record(zone_id, existing.id, type, api_name(host, zone_name), data, ttl, priority)
+        client.update_record(zone_id, first.id, type, api_name(host, zone_name), data, ttl, priority)
       else
         client.create_record(zone_id, type, api_name(host, zone_name), data, ttl, priority)
       end
 
       output_record("Set", record, json)
+      propagate_if_needed(type, host, zone_name, data, wait_propagation, propagation_timeout)
     end
 
     # ─── Helpers ────────────────────────────────────────────────────────
@@ -210,6 +220,24 @@ module AtlanticDNS
         j.field("id", z.id)
         j.field("name", z.name)
       end
+    end
+
+    private def self.propagate_if_needed(type : String, host : String, zone_name : String,
+                                          data : String, wait : Bool, timeout : Int32) : Nil
+      return unless wait
+      unless type.upcase == "A"
+        STDERR.puts "Note: --wait-for-propagation only supports A records; skipping."
+        return
+      end
+      fqdn = if host == "@" || host == zone_name || host == "#{zone_name}."
+        zone_name
+      elsif host.ends_with?(".#{zone_name}")
+        host
+      else
+        "#{host}.#{zone_name}"
+      end
+      success = Propagation.wait_for_a_record(fqdn, data, timeout)
+      exit 1 unless success
     end
 
     private def self.record_to_json(j : JSON::Builder, r : Record) : Nil

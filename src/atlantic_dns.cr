@@ -1,5 +1,6 @@
 require "option_parser"
 require "./commands"
+require "./propagation"
 
 module AtlanticDNS
   def self.run(args : Array(String)) : Nil
@@ -144,6 +145,8 @@ module AtlanticDNS
     when "set"
       zone_name = type = host = data = ttl = priority = nil
       set_instance_name = nil
+      wait_propagation = false
+      propagation_timeout = Propagation::DEFAULT_TIMEOUT
       opts = OptionParser.new do |p|
         p.banner = "Usage: atlantic-dns set --zone Z --type TYPE --host HOST --data DATA [--ttl 3600] [--priority N]\n" \
                    "       atlantic-dns set --zone Z --set-a-record-for-instance-name NAME"
@@ -154,6 +157,8 @@ module AtlanticDNS
         p.on("--ttl TTL", "TTL in seconds") { |v| ttl = v }
         p.on("--priority N", "Priority (MX / SRV)") { |v| priority = v }
         p.on("--set-a-record-for-instance-name NAME", "Upsert A record <name>.<zone> → instance IP") { |v| set_instance_name = v }
+        p.on("--wait-for-propagation", "Block until 1.1.1.1, 9.9.9.9, and 8.8.8.8 all return the new value (A records only)") { wait_propagation = true }
+        p.on("--propagation-timeout N", "Max seconds to wait for propagation (default: #{Propagation::DEFAULT_TIMEOUT})") { |v| propagation_timeout = v.to_i }
         p.on("--keepass-db PATH", "KeepassXC database path") { |v| keepass_db = v }
         p.on("--json", "JSON output") { json = true }
         p.on("--debug", "Log signed URL (creds masked)") { debug = true }
@@ -166,14 +171,18 @@ module AtlanticDNS
       if set_instance_name
         Commands.set_for_instance(client, zone_name: zone_name.not_nil!,
                                    instance_name: set_instance_name.not_nil!,
-                                   ttl: ttl.not_nil!, json: json)
+                                   ttl: ttl.not_nil!, json: json,
+                                   wait_propagation: wait_propagation,
+                                   propagation_timeout: propagation_timeout)
       else
         require_arg(type, "--type")
         require_arg(host, "--host")
         require_arg(data, "--data")
         Commands.set(client, zone_name: zone_name.not_nil!, type: type.not_nil!,
                      host: host.not_nil!, data: data.not_nil!,
-                     ttl: ttl.not_nil!, priority: priority, json: json)
+                     ttl: ttl.not_nil!, priority: priority, json: json,
+                     wait_propagation: wait_propagation,
+                     propagation_timeout: propagation_timeout)
       end
     when "version", "--version", "-v"
       puts Commands::VERSION
