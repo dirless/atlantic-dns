@@ -2,7 +2,6 @@
 atlantic-dns
 atlantic_dns
 dist/
-
 # Crystal
 lib/
 .shards/
@@ -12,3 +11,4 @@ bin/
 # Editor
 .DS_Store
 *.swp
+CLAUDE.md
