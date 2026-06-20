@@ -82,7 +82,7 @@ module AtlanticDNS
                  host : String, data : String, ttl : String,
                  priority : String?, json : Bool) : Nil
       zone_id = client.resolve_zone_id(zone_name)
-      record = client.create_record(zone_id, type, api_name(host, zone_name), data, ttl, priority)
+      record = client.create_record(zone_id, type, api_name(host, zone_name), data, ttl, priority, zone_name)
       output_record("Created", record, json)
     end
 
@@ -255,9 +255,14 @@ module AtlanticDNS
     # Atlantic.Net returns full hostnames (e.g. "portal.staging.dirless.com")
     # even when the record was created with a short label ("portal").
     private def self.host_matches?(record_host : String, host : String, zone_name : String) : Bool
-      fqdn = host == "@" ? zone_name : "#{host}.#{zone_name}"
-      record_host == host || record_host == fqdn ||
-        (host == "@" && (record_host == zone_name || record_host == "#{zone_name}."))
+      if host == zone_name
+        # Special case for apex (host already equals the zone name)
+        record_host == zone_name || record_host == "#{zone_name}."
+      else
+        fqdn = host == "@" ? zone_name : "#{host}.#{zone_name}"
+        record_host == host || record_host == fqdn ||
+          (host == "@" && (record_host == zone_name || record_host == "#{zone_name}."))
+      end
     end
   end
 end

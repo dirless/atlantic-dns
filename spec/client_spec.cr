@@ -178,7 +178,7 @@ describe AtlanticDNS::Client do
           },
         }.to_json)
 
-      record = client.create_record("101", "A", "portal", "1.2.3.4", "3600")
+      record = client.create_record("101", "A", "portal", "example.com", "1.2.3.4", "3600")
       record.id.should eq("601")
       record.type.should eq("A")
       record.host.should eq("portal")

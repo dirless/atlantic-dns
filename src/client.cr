@@ -20,7 +20,7 @@ module AtlanticDNS
     # env var or the runtime cache file used by the staging deploy flow).
     private def self.cached_password : String?
       ENV["KEEPASS_MASTER"]? || begin
-        cache_path = "#{ENV["XDG_RUNTIME_DIR"]? || "/run/user/#{Process.pid}"}/dirless-keepass.cache"
+        cache_path = "#{ENV["XDG_RUNTIME_DIR"]? || "/run/user/#{Process.uid}"}/dirless-keepass.cache"
         File.read(cache_path) rescue nil
       end
     end
@@ -236,7 +236,7 @@ module AtlanticDNS
     # Create a new DNS record in a zone.
     def create_record(zone_id : String, type : String, host : String,
                        data : String, ttl : String,
-                       priority : String? = nil) : Record
+                       priority : String? = nil, zone_name : String? = nil) : Record
       extra = {
         "zone_id" => zone_id,
         "type"    => type,
@@ -246,13 +246,11 @@ module AtlanticDNS
       }
       extra["prio"] = priority if priority
       api_call("DNS-create-zone-record", extra)
-      # API returns a success message, not the record ID — re-fetch to get it.
-      # r.host is the full FQDN; host is the label we sent (e.g. "test" or "@").
-      # For apex records (@) we can't match on host since the API returns the zone FQDN.
+      expected_fqdn = zone_name ? (host == "@" ? zone_name : "#{host}.#{zone_name}") : nil
       list_records(zone_id).find { |r|
         r.type.downcase == type.downcase &&
           r.data == data &&
-          (host == "@" || r.host == host || r.host.starts_with?("#{host}."))
+          (r.host == host || (expected_fqdn && r.host == expected_fqdn))
       } || raise "Record not found after create (type=#{type} host=#{host})"
     end
 

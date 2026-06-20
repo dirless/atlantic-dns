@@ -228,7 +228,7 @@ module AtlanticDNS
   private def self.require_arg(value : String?, flag : String) : Nil
     unless value
       STDERR.puts "Error: #{flag} is required"
-      exit
+      abort
     end
   end
 
