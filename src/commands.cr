@@ -99,7 +99,7 @@ module AtlanticDNS
                              type : String, host : String, json : Bool) : Nil
       zone_id = client.resolve_zone_id(zone_name)
       records = client.list_records(zone_id).select { |r|
-        r.type.downcase == type.downcase && r.host == host
+        r.type.downcase == type.downcase && host_matches?(r.host, host, zone_name)
       }
       if records.empty?
         STDERR.puts "No matching record found: type=#{type} host=#{host}"
@@ -140,8 +140,7 @@ module AtlanticDNS
                  propagation_timeout : Int32 = Propagation::DEFAULT_TIMEOUT) : Nil
       zone_id = client.resolve_zone_id(zone_name)
       matches = client.list_records(zone_id).select { |r|
-        r.type.downcase == type.downcase &&
-          (r.host == host || (host == "@" && (r.host == zone_name || r.host == "#{zone_name}.")))
+        r.type.downcase == type.downcase && host_matches?(r.host, host, zone_name)
       }
 
       # Delete duplicate records beyond the first so set is truly idempotent.
@@ -249,6 +248,16 @@ module AtlanticDNS
         j.field("ttl", r.ttl)
         j.field("priority", r.priority) if r.priority
       end
+    end
+
+    # Match a record host (as returned by the API, possibly FQDN) against
+    # the user-supplied host (short subdomain, "@", or FQDN).
+    # Atlantic.Net returns full hostnames (e.g. "portal.staging.dirless.com")
+    # even when the record was created with a short label ("portal").
+    private def self.host_matches?(record_host : String, host : String, zone_name : String) : Bool
+      fqdn = host == "@" ? zone_name : "#{host}.#{zone_name}"
+      record_host == host || record_host == fqdn ||
+        (host == "@" && (record_host == zone_name || record_host == "#{zone_name}."))
     end
   end
 end
