@@ -18,4 +18,4 @@ development_dependencies:
 
   webmock:
     github: manastech/webmock.cr
-    branch: master
+    version: "~> 0.14.0"
